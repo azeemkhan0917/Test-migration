@@ -1,0 +1,41 @@
+trigger:
+  branches:
+    include:
+      - master
+
+pool:
+  vmImage: "ubuntu-latest"
+  
+parameters:
+- name: Region
+  type: string
+  default: us-west-2
+- name: Resource
+  type: string
+  default: EKS_TF
+  values:
+  - Airflow
+  - EKS_TF
+  - EMR
+- name: Environment
+  type: string
+  default: Dev
+  values:
+  - Dev
+  - Dev_BI
+  - Staging
+  - Prod
+
+steps:
+  - checkout: self 
+    clean: 'true'
+    persistCredentials: 'true'
+
+  - task: CloudFormationCreateOrUpdateStack@1
+    displayName: 'Create/Update Stack: Development-Deployment'
+    inputs:
+      awsCredentials: CDLETL Non-Prod
+      regionName:     ${{ parameters.Region }}
+      stackName:      ${{ parameters.Resource }}-${{ parameters.Environment }}
+      useChangeSet:   false
+      templateFile:   CloudFormation/${{ parameters.Resource }}/${{ parameters.Environment }}/*.yaml
