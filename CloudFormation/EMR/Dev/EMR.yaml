@@ -1,0 +1,332 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloudformation template for EMR
+Parameters: 
+  Environment:
+    Description: Type of Environment
+    AllowedPattern: "[a-z0-9]*"
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - staging
+      - prod
+      - dr
+    Default: dev
+  EMRClusterName:
+    Description: Name of the EMR cluster that need to be created
+    Type: String
+    Default: CDL-DATAOPS-DATALAKE-MANAGED
+  OSReleaseLabel:
+    Description: OS Release label details
+    Type: String
+    Default: 2.0.20220912.1
+  TerminationProtected:
+    Description: Whether to enable termination protection or not
+    Type: String
+    Default: true
+    AllowedValues:
+    - true
+    - false
+  CostCenter:
+    Description: Cost Center ID for Business Unit that owns this EMR
+    Type: String
+    MinLength: 3
+    Default: 96013
+  Ec2KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of the keypair that need to be assigned to EC2
+  EmrManagedMasterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group that need to be assigned to EMR master server
+  EmrManagedSlaveSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group that need to be assigned to EMR slave node
+  Ec2SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet that need to be assigned to EMR EC2 instance
+  StepConcurrencyLevel:
+    Description: Step concurrency level that need to be assigned to EMR
+    Type: Number
+    Default: 8
+  ReleaseLabel:
+    Description: OS release label that need to be assigned to EMR
+    Type: String
+    Default: emr-6.8.0
+  Pythonpackage:
+    Description: ScriptBootstrapActionConfig path
+    Type: String
+  Endevourconfig:
+    Description: criptBootstrapActionConfig path
+    Type: String
+  LogUri:
+    Description: S3 location where EMR logs should be saved
+    Type: String 
+    Default: 's3://cdl-dataops-datalake-main-logs/'
+  EbsRootVolumeSize:
+    Description: Root volume size of EMR cluster 
+    Type: Number
+    Default: 32
+  EmrserviceaccessSecurityGroup:
+    Type: String
+  MasterInstanceType:
+    Description: EMR Master instance type
+    Type: String
+    Default: m5.2xlarge
+  CoreInstanceType:
+    Description: Instance type to be used for core instances.
+    Type: String
+    Default: r5.xlarge
+  NumberOfCoreInstances:
+    Description: Must be a valid number
+    Type: Number
+    Default: 2
+  EMRMasterInstanceCount:
+    Description: Number of masters that need to be created for EMR cluster
+    Type: Number
+    Default: 1
+  TaskGroup1InstanceCount:
+    Description: Instance count that can be assigned to task group 1
+    Type: Number
+    Default: 1
+  TaskGroup1InstanceType:
+    Description: Instance type for task group 1
+    Type: String
+    Default: r5.xlarge
+  TaskGroup2InstanceCount:
+    Description: Instance count that can be assigned to task group 1
+    Type: Number
+    Default: 1
+  TaskGroup2InstanceType:
+    Description: Instance type for task group 1
+    Type: String
+    Default: r5.xlarge
+Resources:
+  EMRService:
+    Type: AWS::EMR::Cluster
+    Properties:
+      Name: !Ref EMRClusterName
+      OSReleaseLabel: !Ref OSReleaseLabel
+      Applications:
+      - Name: Hadoop
+      - Name: Hive
+      - Name: Spark
+      Tags:
+      - Key: cdl:region
+        Value: us-east-1
+      - Key: cdl:name
+        Value: managed-emr-cluster
+      - Key: cdl:team
+        Value: cdl-dataops
+      StepConcurrencyLevel: !Ref StepConcurrencyLevel
+      ReleaseLabel: !Ref ReleaseLabel
+      JobFlowRole: !Ref EMRClusterinstanceProfile
+      LogUri: !Ref LogUri
+      AutoScalingRole: EMR_AutoScaling_DefaultRole
+      EbsRootVolumeSize: !Ref EbsRootVolumeSize
+      ServiceRole: !Ref EMRClusterServiceRole
+      BootstrapActions:
+      - Name: 'Python Packages'
+        ScriptBootstrapAction:
+          Path: !Ref Pythonpackage
+      - Name: 'Endeavor Config'
+        ScriptBootstrapAction:
+          Path: !Ref Endevourconfig
+      ScaleDownBehavior: TERMINATE_AT_TASK_COMPLETION
+      Configurations:
+      - Classification: spark
+        ConfigurationProperties:
+          maximizeResourceAllocation: true
+      - Classification: spark-defaults
+        ConfigurationProperties: 
+          spark.executor.memory: 4G
+          spark.driver.memory: 1G
+          spark.driver.cores: 2
+          spark.sql.catalog.iceberg_catalog.io-impl: org.apache.iceberg.aws.s3.S3FileIO
+          spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+          spark.executor.cores: 2
+          spark.executor.instances: 2
+          spark.sql.catalog.iceberg_catalog.warehouse: s3://cdl-dataops-iceberg-datalake/dev
+          spark.sql.catalog.iceberg_catalog: org.apache.iceberg.spark.SparkCatalog
+          spark.sql.catalog.iceberg_catalog.catalog-impl: org.apache.iceberg.aws.glue.GlueCatalog
+      - Classification: iceberg-defaults
+        ConfigurationProperties:
+          iceberg.enabled: true
+      - Classification: hdfs-site
+        ConfigurationProperties:
+          dfs.replication: 1
+      - Classification: spark-hive-site
+        ConfigurationProperties:
+          hive.metastore.client.factory.class: com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory
+      - Classification: hive-site
+        ConfigurationProperties:
+          hive.metastore.schema.verification: false
+          hive.metastore.client.factory.class: com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory
+      Instances:
+        TerminationProtected: !Ref TerminationProtected
+        Ec2KeyName: !Ref Ec2KeyName
+        EmrManagedMasterSecurityGroup: !Ref EmrManagedMasterSecurityGroup
+        EmrManagedSlaveSecurityGroup: !Ref EmrManagedSlaveSecurityGroup
+        ServiceAccessSecurityGroup: !Ref EmrserviceaccessSecurityGroup
+        Ec2SubnetId: !Ref Ec2SubnetId
+        MasterInstanceGroup:
+          InstanceCount: !Ref EMRMasterInstanceCount
+          InstanceType: !Ref MasterInstanceType
+          Name: Master-1
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+            - VolumesPerInstance: 2
+              VolumeSpecification: 
+                SizeInGB: 128
+                VolumeType: gp2
+        CoreInstanceGroup:
+          InstanceCount: !Ref NumberOfCoreInstances
+          InstanceType: !Ref CoreInstanceType
+          Name: Core
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+            - VolumesPerInstance: 2
+              VolumeSpecification: 
+                SizeInGB: 128
+                VolumeType: gp2
+        TaskInstanceGroups:
+        - InstanceCount: !Ref TaskGroup1InstanceCount
+          InstanceType: !Ref TaskGroup1InstanceType
+          Name: Task-1
+          AutoScalingPolicy:
+            Constraints:
+              MinCapacity: 0
+              MaxCapacity: 16
+            Rules:
+            - Action: 
+                SimpleScalingPolicyConfiguration:
+                  AdjustmentType: CHANGE_IN_CAPACITY
+                  CoolDown: 300
+                  ScalingAdjustment: 8
+              Name: YARN 1
+              Trigger:
+                CloudWatchAlarmDefinition:
+                  MetricName: YARNMemoryAvailablePercentage
+                  ComparisonOperator: LESS_THAN
+                  Statistic: AVERAGE
+                  Period: 300
+                  Dimensions:
+                  - Key: JobFlowId
+                    Value: ${emr.clusterId}
+                  EvaluationPeriods: 1
+                  Unit: PERCENT
+                  Namespace: AWS/ElasticMapReduce
+                  Threshold: 50
+            - Action: 
+                SimpleScalingPolicyConfiguration:
+                  AdjustmentType: CHANGE_IN_CAPACITY
+                  CoolDown: 300
+                  ScalingAdjustment: -2
+              Name: YARN-1
+              Trigger:
+                CloudWatchAlarmDefinition:
+                  MetricName: YARNMemoryAvailablePercentage
+                  ComparisonOperator: GREATER_THAN
+                  Statistic: AVERAGE
+                  Period: 300
+                  Dimensions:
+                  - Key: JobFlowId
+                    Value: ${emr.clusterId}
+                  EvaluationPeriods: 1
+                  Unit: PERCENT
+                  Namespace: AWS/ElasticMapReduce
+                  Threshold: 85
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+            - VolumesPerInstance: 2
+              VolumeSpecification: 
+                SizeInGB: 128
+                VolumeType: gp2
+        - InstanceCount: !Ref TaskGroup2InstanceCount
+          InstanceType: !Ref TaskGroup2InstanceType
+          Name: Task-2
+          AutoScalingPolicy:
+            Constraints:
+              MinCapacity: 0
+              MaxCapacity: 16
+            Rules:
+            - Action: 
+                SimpleScalingPolicyConfiguration:
+                  AdjustmentType: CHANGE_IN_CAPACITY
+                  CoolDown: 300
+                  ScalingAdjustment: 8
+              Name: YARN 2
+              Trigger:
+                CloudWatchAlarmDefinition:
+                  MetricName: YARNMemoryAvailablePercentage
+                  ComparisonOperator: LESS_THAN
+                  Statistic: AVERAGE
+                  Period: 300
+                  Dimensions:
+                  - Key: JobFlowId
+                    Value: ${emr.clusterId}
+                  EvaluationPeriods: 1
+                  Unit: PERCENT
+                  Namespace: AWS/ElasticMapReduce
+                  Threshold: 60
+            - Action: 
+                SimpleScalingPolicyConfiguration:
+                  AdjustmentType: CHANGE_IN_CAPACITY
+                  CoolDown: 300
+                  ScalingAdjustment: -2
+              Name: YARN-2
+              Trigger:
+                CloudWatchAlarmDefinition:
+                  MetricName: YARNMemoryAvailablePercentage
+                  ComparisonOperator: GREATER_THAN
+                  Statistic: AVERAGE
+                  Period: 300
+                  Dimensions:
+                  - Key: JobFlowId
+                    Value: ${emr.clusterId}
+                  EvaluationPeriods: 1
+                  Unit: PERCENT
+                  Namespace: AWS/ElasticMapReduce
+                  Threshold: 75
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+            - VolumesPerInstance: 2
+              VolumeSpecification: 
+                SizeInGB: 128
+                VolumeType: gp2
+
+  EMRClusterServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - elasticmapreduce.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole'
+      Path: /
+  EMRClusterinstanceProfileRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role'
+      Path: /
+  EMRClusterinstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EMRClusterinstanceProfileRole
