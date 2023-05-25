@@ -34,7 +34,7 @@ steps:
   - task: CloudFormationCreateOrUpdateStack@1
     displayName: 'Create/Update Stack: Development-Deployment'
     inputs:
-      awsCredentials: CDLETL Non-Prod
+      awsCredentials: 'AWS'
       regionName:     ${{ parameters.Region }}
       stackName:      ${{ parameters.Resource }}-${{ parameters.Environment }}
       useChangeSet:   false
